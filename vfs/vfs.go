@@ -138,6 +138,28 @@ func (q *QuotaCheckResult) GetRemainingFiles() int {
 	return 0
 }
 
+// MantaConfig defines the configuration for S3 based filesystem
+type MantaFsConfig struct {
+	sdk.MantaFsConfig
+}
+
+// Validate returns an error if the configuration is not valid
+func (c *MantaFsConfig) Validate() error {
+	if c.Path == "" {
+		c.Path = "/"
+	}
+	if c.URL == "" {
+		return errors.New("URL cannot be empty")
+	}
+	if c.User == "" {
+		return errors.New("user cannot be empty")
+	}
+	if c.KeyMaterial == "" {
+		return errors.New("key_material cannot be empty")
+	}
+	return nil
+}
+
 // S3FsConfig defines the configuration for S3 based filesystem
 type S3FsConfig struct {
 	sdk.S3FsConfig

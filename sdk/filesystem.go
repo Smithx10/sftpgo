@@ -84,6 +84,15 @@ func ListProviders() []FilesystemProvider {
 	}
 }
 
+type MantaFsConfig struct {
+	Path        string `json:"path,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Account     string `json:"account,omitempty"`
+	KeyMaterial string `json:"key_material,omitempty"`
+	KeyId       string `json:"key_id,omitempty"`
+	User        string `json:"user,omitempty"`
+}
+
 // S3FsConfig defines the configuration for S3 based filesystem
 type S3FsConfig struct {
 	Bucket string `json:"bucket,omitempty"`

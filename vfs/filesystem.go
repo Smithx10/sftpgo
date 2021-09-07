@@ -24,6 +24,7 @@ type Filesystem struct {
 	AzBlobConfig   AzBlobFsConfig         `json:"azblobconfig,omitempty"`
 	CryptConfig    CryptFsConfig          `json:"cryptconfig,omitempty"`
 	SFTPConfig     SFTPFsConfig           `json:"sftpconfig,omitempty"`
+	MantaConfig    MantaFsConfig          `json:"mantaconfig,omitempty"`
 }
 
 // SetEmptySecretsIfNil sets the secrets to empty if nil

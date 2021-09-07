@@ -37,6 +37,11 @@ var (
 	portableAllowedPatterns            []string
 	portableDeniedPatterns             []string
 	portableFsProvider                 string
+	portableMantaPath                  string
+	portableMantaURL                   string
+	portableMantaKeyMaterial           string
+	portableMantaKeyId                 string
+	portableMantaUser                  string
 	portableS3Bucket                   string
 	portableS3Region                   string
 	portableS3AccessKey                string
@@ -159,6 +164,15 @@ Please take a look at the usage below to customize the serving parameters`,
 					},
 					FsConfig: vfs.Filesystem{
 						Provider: sdk.GetProviderByName(portableFsProvider),
+						MantaConfig: vfs.MantaFsConfig{
+							MantaFsConfig: sdk.MantaFsConfig{
+								Path:        portableMantaPath,
+								URL:         portableMantaURL,
+								KeyMaterial: portableMantaKeyMaterial,
+								KeyId:       portableMantaKeyId,
+								User:        portableMantaUser,
+							},
+						},
 						S3Config: vfs.S3FsConfig{
 							S3FsConfig: sdk.S3FsConfig{
 								Bucket:            portableS3Bucket,
