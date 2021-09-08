@@ -96,6 +96,7 @@ func (fs *MantaFs) Stat(name string) (os.FileInfo, error) {
 		ObjectPath: name,
 	})
 	if err != nil {
+		fmt.Println("ERRORStat: " + err.Error())
 		return nil, err
 	}
 
@@ -120,7 +121,7 @@ func (fs *MantaFs) Open(name string, offset int64) (File, *pipeat.PipeReaderAt, 
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	ctx, cancelFn := context.WithCancel(context.Background())
 
 	obj, err := fs.svc.Objects().Get(ctx, &storage.GetObjectInput{
 		ObjectPath: name,
@@ -148,8 +149,39 @@ func (fs *MantaFs) Open(name string, offset int64) (File, *pipeat.PipeReaderAt, 
 
 // Create creates or opens the named file for writing
 func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), error) {
-	fmt.Println("INSIDE Create")
-	return nil, nil, nil, nil
+	fmt.Println("INSIDE Create: "+name, flag)
+	r, w, err := pipeat.PipeInDir(fs.localTempDir)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	p := NewPipeWriter(w)
+	ctx, cancelFn := context.WithCancel(context.Background())
+
+	go func() {
+		key := name
+		defer cancelFn()
+		var err error
+		if flag == -1 {
+			err = fs.svc.Dir().Put(ctx, &storage.PutDirectoryInput{
+				DirectoryName: key,
+			})
+			r.CloseWithError(err) //nolint:errcheck
+		} else {
+			err = fs.svc.Objects().Put(ctx, &storage.PutObjectInput{
+				ObjectPath:   key,
+				ObjectReader: r,
+				ForceInsert:  true,
+			})
+		}
+		if err != nil {
+			r.CloseWithError(err) //nolint:errcheck
+		}
+		p.Done(err)
+		fsLog(fs, logger.LevelDebug, "upload completed, path: %#v, readed bytes: %v, err: %v", name, r.GetReadedBytes(), err)
+		//metric.AZTransferCompleted(r.GetReadedBytes(), 0, err)
+	}()
+
+	return nil, p, cancelFn, nil
 }
 
 func (fs *MantaFs) Rename(source, target string) error {
@@ -165,8 +197,15 @@ func (fs *MantaFs) Remove(name string, isDir bool) error {
 
 // Mkdir creates a new directory with the specified name and default permissions
 func (fs *MantaFs) Mkdir(name string) error {
-	fmt.Println("INSIDE Mkdir")
-	return nil
+	_, err := fs.Stat(name)
+	if !fs.IsNotExist(err) {
+		return err
+	}
+	_, w, _, err := fs.Create(name, -1)
+	if err != nil {
+		return err
+	}
+	return w.Close()
 }
 
 // MkdirAll does nothing, we don't have folder
@@ -226,7 +265,7 @@ func (fs *MantaFs) ReadDir(dirname string) ([]os.FileInfo, error) {
 		if e.Type == "directory" {
 			dir = true
 		}
-		fmt.Println(e.Name)
+                fmt.Println("E: ", e.Name, e.Size)
 		result = append(result, NewFileInfo(e.Name, dir, int64(e.Size), e.ModifiedTime, false))
 	}
 
@@ -250,14 +289,23 @@ func (*MantaFs) IsAtomicUploadSupported() bool {
 // report that a file or directory does not exist
 func (*MantaFs) IsNotExist(err error) bool {
 	fmt.Println("INSIDE_IsNotExist")
-	return false
+	if err == nil {
+		return false
+	}
+	fmt.Println(err.Error())
+
+	return strings.Contains(err.Error(), "404")
+
 }
 
 // IsPermission returns a boolean indicating whether the error is known to
 // report that permission is denied.
 func (*MantaFs) IsPermission(err error) bool {
 	fmt.Println("INSIDE_IsPermission")
-	return false
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "403")
 }
 
 // IsNotSupported returns true if the error indicate an unsupported operation
