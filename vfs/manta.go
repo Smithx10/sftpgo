@@ -4,16 +4,20 @@
 package vfs
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/eikenb/pipeat"
 	"github.com/pkg/sftp"
 
+	"github.com/drakkan/sftpgo/v2/logger"
 	"github.com/drakkan/sftpgo/v2/version"
 	triton "github.com/joyent/triton-go/v2"
 	"github.com/joyent/triton-go/v2/authentication"
@@ -36,7 +40,7 @@ func init() {
 	version.AddFeature("+manta")
 }
 
-// NewS3Fs returns an S3Fs object that allows to interact with an s3 compatible
+// NewMantaFs returns an Manta client that allows to interact with an Manta
 // object storage
 func NewMantaFs(connectionID, localTempDir, mountPath string, config MantaFsConfig) (Fs, error) {
 	if localTempDir == "" {
@@ -79,35 +83,89 @@ func (fs *MantaFs) ConnectionID() string {
 
 // Stat returns a FileInfo describing the named file
 func (fs *MantaFs) Stat(name string) (os.FileInfo, error) {
-	return nil, nil
+	fmt.Println("IN_STAT: " + name)
+	if name == "" || name == "." {
+		if fs.svc != nil {
+			return nil, fmt.Errorf("Empty Name")
+		}
+		return NewFileInfo(name, true, 0, time.Now(), false), nil
+	}
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	defer cancelFn()
+	info, err := fs.svc.Objects().GetInfo(ctx, &storage.GetInfoInput{
+		ObjectPath: name,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	isDir := false
+	if strings.HasSuffix(info.ContentType, "type=directory") {
+		isDir = true
+	}
+
+	return NewFileInfo(name, isDir, int64(info.ContentLength), info.LastModified, false), nil
 }
 
 // Lstat returns a FileInfo describing the named file
 func (fs *MantaFs) Lstat(name string) (os.FileInfo, error) {
+	fmt.Println("IN_LSTAT: " + name)
 	return fs.Stat(name)
 }
 
 // Open opens the named file for reading
 func (fs *MantaFs) Open(name string, offset int64) (File, *pipeat.PipeReaderAt, func(), error) {
-	return nil, nil, nil, nil
+	fmt.Println("INSIDE Open")
+	r, w, err := pipeat.PipeInDir(fs.localTempDir)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+
+	obj, err := fs.svc.Objects().Get(ctx, &storage.GetObjectInput{
+		ObjectPath: name,
+	})
+
+	if err != nil {
+		r.Close()
+		w.Close()
+		cancelFn()
+		return nil, nil, nil, err
+	}
+
+	go func() {
+		defer cancelFn()
+		defer obj.ObjectReader.Close()
+
+		n, err := io.Copy(w, obj.ObjectReader)
+		w.CloseWithError(err) //nolint:errcheck
+		fsLog(fs, logger.LevelDebug, "download completed, path: %#v size: %v, err: %v", name, n, err)
+		//metric.AZTransferCompleted(n, 1, err)
+	}()
+
+	return nil, r, cancelFn, nil
 }
 
 // Create creates or opens the named file for writing
 func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), error) {
+	fmt.Println("INSIDE Create")
 	return nil, nil, nil, nil
 }
 
 func (fs *MantaFs) Rename(source, target string) error {
+	fmt.Println("INSIDE Rename")
 	return nil
 }
 
 // Remove removes the named file or (empty) directory.
 func (fs *MantaFs) Remove(name string, isDir bool) error {
+	fmt.Println("INSIDE Remove")
 	return nil
 }
 
 // Mkdir creates a new directory with the specified name and default permissions
 func (fs *MantaFs) Mkdir(name string) error {
+	fmt.Println("INSIDE Mkdir")
 	return nil
 }
 
@@ -151,7 +209,28 @@ func (*MantaFs) Truncate(name string, size int64) error {
 // ReadDir reads the directory named by dirname and returns
 // a list of directory entries.
 func (fs *MantaFs) ReadDir(dirname string) ([]os.FileInfo, error) {
-	return nil, nil
+	fmt.Println("INSIDE ReadDir")
+	fmt.Println(dirname)
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	defer cancelFn()
+	dirList, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
+		DirectoryName: dirname,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var result []os.FileInfo
+	for _, e := range dirList.Entries {
+		dir := false
+		if e.Type == "directory" {
+			dir = true
+		}
+		fmt.Println(e.Name)
+		result = append(result, NewFileInfo(e.Name, dir, int64(e.Size), e.ModifiedTime, false))
+	}
+
+	return result, nil
 }
 
 // IsUploadResumeSupported returns true if resuming uploads is supported.
@@ -170,17 +249,20 @@ func (*MantaFs) IsAtomicUploadSupported() bool {
 // IsNotExist returns a boolean indicating whether the error is known to
 // report that a file or directory does not exist
 func (*MantaFs) IsNotExist(err error) bool {
+	fmt.Println("INSIDE_IsNotExist")
 	return false
 }
 
 // IsPermission returns a boolean indicating whether the error is known to
 // report that permission is denied.
 func (*MantaFs) IsPermission(err error) bool {
+	fmt.Println("INSIDE_IsPermission")
 	return false
 }
 
 // IsNotSupported returns true if the error indicate an unsupported operation
 func (*MantaFs) IsNotSupported(err error) bool {
+	fmt.Println("INSIDE_IsNotSupported")
 	if err == nil {
 		return false
 	}
@@ -189,20 +271,23 @@ func (*MantaFs) IsNotSupported(err error) bool {
 
 // CheckRootPath creates the specified local root directory if it does not exists
 func (fs *MantaFs) CheckRootPath(username string, uid int, gid int) bool {
-	// we need a local directory for temporary files
 	osFs := NewOsFs(fs.ConnectionID(), fs.localTempDir, "")
+	fmt.Println("INSIDE_CHECK_ROOT_PATH: "+username, uid, gid, osFs.CheckRootPath(username, uid, gid))
+	// we need a local directory for temporary files
 	return osFs.CheckRootPath(username, uid, gid)
 }
 
 // ScanRootDirContents returns the number of files contained in the bucket,
 // and their size
 func (fs *MantaFs) ScanRootDirContents() (int, int64, error) {
+	fmt.Println("INSIDE_ScanRootDirContents")
 	return 2, 2, nil
 }
 
 // GetDirSize returns the number of files and the size for a folder
 // including any subfolders
 func (*MantaFs) GetDirSize(dirname string) (int, int64, error) {
+	fmt.Println("INSIDE_GET_DIR_SIZE")
 	return 0, 0, nil
 }
 
@@ -215,37 +300,60 @@ func (*MantaFs) GetAtomicUploadPath(name string) string {
 // GetRelativePath returns the path for a file relative to the user's home dir.
 // This is the path as seen by SFTPGo users
 func (fs *MantaFs) GetRelativePath(name string) string {
+	fmt.Println("INSIDE_GET_RELATIVE_PATH")
 	return "/rawr"
 }
 
 // Walk walks the file tree rooted at root, calling walkFn for each file or
 // directory in the tree, including root. The result are unordered
 func (fs *MantaFs) Walk(root string, walkFn filepath.WalkFunc) error {
+	fmt.Println("INSIDE WALK")
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	defer cancelFn()
+	dirList, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
+		DirectoryName: fs.config.Path,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(dirList)
 	return nil
 }
 
 // Join joins any number of path elements into a single path
 func (*MantaFs) Join(elem ...string) string {
+	fmt.Println("INSIDE_JOIN")
 	return path.Join(elem...)
 }
 
 // HasVirtualFolders returns true if folders are emulated
 func (*MantaFs) HasVirtualFolders() bool {
+	fmt.Println("INSIDE_HAS_VIRT_FOLDERS")
 	return true
 }
 
 // ResolvePath returns the matching filesystem path for the specified virtual path
 func (fs *MantaFs) ResolvePath(virtualPath string) (string, error) {
-	return "", nil
+	fmt.Println("INSIDE_RESOLVE_PATH: ", virtualPath)
+	if fs.mountPath != "" {
+		virtualPath = strings.TrimPrefix(virtualPath, fs.mountPath)
+	}
+	if !path.IsAbs(virtualPath) {
+		virtualPath = path.Clean("/" + virtualPath)
+	}
+	return fs.Join("/", fs.config.KeyPrefix, virtualPath), nil
 }
 
 // GetMimeType returns the content type
 func (fs *MantaFs) GetMimeType(name string) (string, error) {
+	fmt.Println("INSIDE_GET_MIME_TYPE")
 	return "rawr", nil
 }
 
 // Close closes the fs
 func (*MantaFs) Close() error {
+	fmt.Println("INSIDE_CLOSE")
 	return nil
 }
 

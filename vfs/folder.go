@@ -87,7 +87,7 @@ func (v *BaseVirtualFolder) GetStorageDescrition() string {
 	case sdk.AzureBlobFilesystemProvider:
 		return fmt.Sprintf("AzBlob: %v", v.FsConfig.AzBlobConfig.Container)
 	case sdk.MantaFilesystemProvider:
-		return fmt.Sprintf("Manta: %v", v.MappedPath)
+		return fmt.Sprintf("Manta: %v", v.FsConfig.MantaConfig.Path)
 	case sdk.CryptedFilesystemProvider:
 		return fmt.Sprintf("Encrypted: %v", v.MappedPath)
 	case sdk.SFTPFilesystemProvider:
