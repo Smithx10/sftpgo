@@ -39,7 +39,7 @@ var (
 	portableFsProvider                 string
 	portableMantaPath                  string
 	portableMantaURL                   string
-	portableMantaKeyMaterial           string
+	portableMantaPrivateKey            string
 	portableMantaKeyId                 string
 	portableMantaUser                  string
 	portableS3Bucket                   string
@@ -166,11 +166,11 @@ Please take a look at the usage below to customize the serving parameters`,
 						Provider: sdk.GetProviderByName(portableFsProvider),
 						MantaConfig: vfs.MantaFsConfig{
 							MantaFsConfig: sdk.MantaFsConfig{
-								Path:        portableMantaPath,
-								URL:         portableMantaURL,
-								KeyMaterial: portableMantaKeyMaterial,
-								KeyId:       portableMantaKeyId,
-								User:        portableMantaUser,
+								Path:       portableMantaPath,
+								URL:        portableMantaURL,
+								PrivateKey: kms.NewPlainSecret(portableMantaPrivateKey),
+								KeyId:      portableMantaKeyId,
+								User:       portableMantaUser,
 							},
 						},
 						S3Config: vfs.S3FsConfig{

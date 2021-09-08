@@ -12,7 +12,46 @@
                 </select>
             </div>
         </div>
-
+        <div class="form-group row fsconfig fsconfig-mantafs">
+            <label for="idMantaURL" class="col-sm-2 col-form-label">URL</label>
+            <div class="col-sm-3">
+                <input type="text" class="form-control" id="idMantaURL" name="manta_url" placeholder=""
+                    value="{{.MantaConfig.URL}}" maxlength="255">
+            </div>
+            <div class="col-sm-2"></div>
+            <label for="idMantaPath" class="col-sm-2 col-form-label">Path</label>
+            <div class="col-sm-3">
+                <input type="text" class="form-control" id="idMantaPath" name="manta_path" placeholder=""
+                    value="{{.MantaConfig.Path}}" maxlength="255">
+            </div>
+        </div>
+        <div class="form-group row fsconfig fsconfig-mantafs">
+            <label for="idMantaAccount" class="col-sm-2 col-form-label">Account</label>
+            <div class="col-sm-3">
+                <input type="text" class="form-control" id="idMantaAccount" name="manta_account" placeholder=""
+                    value="{{.MantaConfig.Account}}" maxlength="255">
+            </div>
+            <div class="col-sm-2"></div>
+            <label for="idMantaUser" class="col-sm-2 col-form-label">User</label>
+            <div class="col-sm-3">
+                <input type="text" class="form-control" id="idMantaUser" name="manta_user" placeholder=""
+                    value="{{.MantaConfig.User}}" maxlength="255">
+            </div>
+        </div>
+        <div class="form-group row fsconfig fsconfig-mantafs">
+            <label for="idMantaKeyId" class="col-sm-2 col-form-label">Key Id</label>
+            <div class="col-sm-3">
+                <input type="text" class="form-control" id="idMantaKeyId" name="manta_key_id" placeholder=""
+                    value="{{.MantaConfig.KeyId}}" maxlength="255">
+            </div>
+        </div>
+        <div class="form-group row fsconfig fsconfig-mantafs">
+            <label for="idMantaPPrivateKey" class="col-sm-2 col-form-label">Private Key</label>
+            <div class="col-sm-10">
+                <textarea type="password" class="form-control" id="idMantaPrivateKey" name="manta_private_key"
+                    rows="3">{{if .MantaConfig.PrivateKey.IsEncrypted}}{{.RedactedSecret}}{{else}}{{.MantaConfig.PrivateKey.GetPayload}}{{end}}</textarea>
+            </div>
+        </div>
         <div class="form-group row fsconfig fsconfig-s3fs">
             <label for="idS3Bucket" class="col-sm-2 col-form-label">Bucket</label>
             <div class="col-sm-3">

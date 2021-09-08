@@ -4,9 +4,7 @@
 package vfs
 
 import (
-	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -35,7 +33,7 @@ type MantaFs struct {
 }
 
 func init() {
-	version.AddFeature("+s3")
+	version.AddFeature("+manta")
 }
 
 // NewS3Fs returns an S3Fs object that allows to interact with an s3 compatible
@@ -60,7 +58,12 @@ func NewMantaFs(connectionID, localTempDir, mountPath string, config MantaFsConf
 		return fs, err
 	}
 
-	fs.svc = NewMantaClient(fs.config)
+	var err error
+	fs.svc, err = NewMantaClient(fs.config)
+	if err != nil {
+		return fs, err
+	}
+
 	return fs, nil
 }
 
@@ -251,72 +254,48 @@ func (*MantaFs) GetAvailableDiskSize(dirName string) (*sftp.StatVFS, error) {
 	return nil, ErrStorageSizeUnavailable
 }
 
-func NewMantaClient(config *MantaFsConfig) *storage.StorageClient {
+func NewMantaClient(config *MantaFsConfig) (*storage.StorageClient, error) {
 	accountName := config.Account
-	keyMaterial := config.KeyMaterial
+	if !config.PrivateKey.IsEmpty() {
+		if err := config.PrivateKey.TryDecrypt(); err != nil {
+			return nil, err
+		}
+	}
+
 	keyID := config.KeyId
 	userName := config.User
+	userName = config.User
 
 	var signer authentication.Signer
 	var err error
 
-	if keyMaterial == "" {
-		input := authentication.SSHAgentSignerInput{
-			KeyID:       keyID,
-			AccountName: accountName,
-			Username:    userName,
-		}
-		signer, err = authentication.NewSSHAgentSigner(input)
-		if err != nil {
-			log.Fatalf("Error Creating SSH Agent Signer: {{err}}", err)
-		}
-	} else {
-		var keyBytes []byte
-		if _, err = os.Stat(keyMaterial); err == nil {
-			keyBytes, err = ioutil.ReadFile(keyMaterial)
-			if err != nil {
-				log.Fatalf("Error reading key material from %s: %s",
-					keyMaterial, err)
-			}
-			block, _ := pem.Decode(keyBytes)
-			if block == nil {
-				log.Fatalf(
-					"Failed to read key material '%s': no key found", keyMaterial)
-			}
+	var keyBytes []byte
+	if config.PrivateKey.GetPayload() != "" {
+		keyBytes = []byte(config.PrivateKey.GetPayload())
+	}
 
-			if block.Headers["Proc-Type"] == "4,ENCRYPTED" {
-				log.Fatalf(
-					"Failed to read key '%s': password protected keys are\n"+
-						"not currently supported. Please decrypt the key prior to use.", keyMaterial)
-			}
-
-		} else {
-			keyBytes = []byte(keyMaterial)
-		}
-
-		input := authentication.PrivateKeySignerInput{
-			KeyID:              keyID,
-			PrivateKeyMaterial: keyBytes,
-			AccountName:        accountName,
-			Username:           userName,
-		}
-		signer, err = authentication.NewPrivateKeySigner(input)
-		if err != nil {
-			log.Fatalf("Error Creating SSH Private Key Signer: {{err}}", err)
-		}
+	input := authentication.PrivateKeySignerInput{
+		KeyID:              keyID,
+		PrivateKeyMaterial: keyBytes,
+		AccountName:        accountName,
+		Username:           userName,
+	}
+	signer, err = authentication.NewPrivateKeySigner(input)
+	if err != nil {
+		log.Fatalf("Error Creating SSH Private Key Signer: {{err}}", err)
 	}
 
 	cfg := &triton.ClientConfig{
 		MantaURL:    config.URL,
-		AccountName: config.Account,
+		AccountName: accountName,
 		Username:    "",
 		Signers:     []authentication.Signer{signer},
 	}
 
 	c, err := storage.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("compute.NewClient: %s", err)
+		log.Fatalf("storage.NewClient: %s", err)
 	}
 
-	return c
+	return c, nil
 }

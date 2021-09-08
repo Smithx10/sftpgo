@@ -63,6 +63,10 @@ func addUser(w http.ResponseWriter, r *http.Request) {
 	user.SetEmptySecretsIfNil()
 	switch user.FsConfig.Provider {
 	case sdk.S3FilesystemProvider:
+		if user.FsConfig.MantaConfig.PrivateKey.IsRedacted() {
+			sendAPIResponse(w, r, errors.New("invalid access_secret"), "", http.StatusBadRequest)
+			return
+		}
 		if user.FsConfig.S3Config.AccessSecret.IsRedacted() {
 			sendAPIResponse(w, r, errors.New("invalid access_secret"), "", http.StatusBadRequest)
 			return
@@ -153,6 +157,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 	currentCryptoPassphrase := user.FsConfig.CryptConfig.Passphrase
 	currentSFTPPassword := user.FsConfig.SFTPConfig.Password
 	currentSFTPKey := user.FsConfig.SFTPConfig.PrivateKey
+	currentMantaKey := user.FsConfig.MantaConfig.PrivateKey
 
 	user.Permissions = make(map[string][]string)
 	user.FsConfig.S3Config = vfs.S3FsConfig{}
@@ -178,7 +183,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 		user.Permissions = currentPermissions
 	}
 	updateEncryptedSecrets(&user.FsConfig, currentS3AccessSecret, currentAzAccountKey, currentAzSASUrl,
-		currentGCSCredentials, currentCryptoPassphrase, currentSFTPPassword, currentSFTPKey)
+		currentGCSCredentials, currentCryptoPassphrase, currentSFTPPassword, currentSFTPKey, currentMantaKey)
 	err = dataprovider.UpdateUser(&user)
 	if err != nil {
 		sendAPIResponse(w, r, err, "", getRespStatus(err))
@@ -211,7 +216,7 @@ func disconnectUser(username string) {
 }
 
 func updateEncryptedSecrets(fsConfig *vfs.Filesystem, currentS3AccessSecret, currentAzAccountKey, currentAzSASUrl,
-	currentGCSCredentials, currentCryptoPassphrase, currentSFTPPassword, currentSFTPKey *kms.Secret) {
+	currentGCSCredentials, currentCryptoPassphrase, currentSFTPPassword, currentSFTPKey *kms.Secret, currentMantaKey *kms.Secret) {
 	// we use the new access secret if plain or empty, otherwise the old value
 	switch fsConfig.Provider {
 	case sdk.S3FilesystemProvider:
@@ -232,6 +237,10 @@ func updateEncryptedSecrets(fsConfig *vfs.Filesystem, currentS3AccessSecret, cur
 	case sdk.CryptedFilesystemProvider:
 		if fsConfig.CryptConfig.Passphrase.IsNotPlainAndNotEmpty() {
 			fsConfig.CryptConfig.Passphrase = currentCryptoPassphrase
+		}
+	case sdk.MantaFilesystemProvider:
+		if fsConfig.MantaConfig.PrivateKey.IsNotPlainAndNotEmpty() {
+			fsConfig.MantaConfig.PrivateKey = currentMantaKey
 		}
 	case sdk.SFTPFilesystemProvider:
 		if fsConfig.SFTPConfig.Password.IsNotPlainAndNotEmpty() {

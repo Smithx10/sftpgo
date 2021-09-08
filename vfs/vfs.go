@@ -151,13 +151,44 @@ func (c *MantaFsConfig) Validate() error {
 	if c.URL == "" {
 		return errors.New("URL cannot be empty")
 	}
-	if c.User == "" {
-		return errors.New("user cannot be empty")
+	if err := c.validateCredentials(); err != nil {
+		return err
 	}
-	if c.KeyMaterial == "" {
-		return errors.New("key_material cannot be empty")
+
+	//if c.User == "" {
+	//return errors.New("user cannot be empty")
+	//}
+	//if c.KeyMaterial == "" {
+	//return errors.New("key_material cannot be empty")
+	//}
+	return nil
+}
+func (c *MantaFsConfig) validateCredentials() error {
+	if c.PrivateKey.IsEncrypted() && !c.PrivateKey.IsValid() {
+		return errors.New("invalid encrypted private key")
+	}
+	if !c.PrivateKey.IsEmpty() && !c.PrivateKey.IsValidInput() {
+		return errors.New("invalid private key")
 	}
 	return nil
+}
+
+func (c *MantaFsConfig) setEmptyCredentialsIfNil() {
+	if c.PrivateKey == nil {
+		c.PrivateKey = kms.NewEmptySecret()
+	}
+}
+
+func (c *MantaFsConfig) isEqual(other *MantaFsConfig) bool {
+	if c.URL != other.URL {
+		return false
+	}
+	if c.URL != other.Path {
+		return false
+	}
+	c.setEmptyCredentialsIfNil()
+	other.setEmptyCredentialsIfNil()
+	return c.PrivateKey.IsEqual(other.PrivateKey)
 }
 
 // S3FsConfig defines the configuration for S3 based filesystem

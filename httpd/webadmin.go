@@ -762,6 +762,21 @@ func getSecretFromFormField(r *http.Request, field string) *kms.Secret {
 	return secret
 }
 
+func getMantaConfig(r *http.Request) (vfs.MantaFsConfig, error) {
+	var err error
+	config := vfs.MantaFsConfig{}
+	config.URL = r.Form.Get("manta_url")
+	config.Path = r.Form.Get("manta_path")
+	config.Account = r.Form.Get("manta_account")
+	config.KeyId = r.Form.Get("manta_key_id")
+	config.User = r.Form.Get("manta_user")
+	config.PrivateKey = getSecretFromFormField(r, "manta_private_key")
+	if err != nil {
+		return config, err
+	}
+	return config, err
+}
+
 func getS3Config(r *http.Request) (vfs.S3FsConfig, error) {
 	var err error
 	config := vfs.S3FsConfig{}
@@ -864,6 +879,12 @@ func getFsConfigFromPostFields(r *http.Request) (vfs.Filesystem, error) {
 	var fs vfs.Filesystem
 	fs.Provider = sdk.GetProviderByName(r.Form.Get("fs_provider"))
 	switch fs.Provider {
+	case sdk.MantaFilesystemProvider:
+		config, err := getMantaConfig(r)
+		if err != nil {
+			return fs, err
+		}
+		fs.MantaConfig = config
 	case sdk.S3FilesystemProvider:
 		config, err := getS3Config(r)
 		if err != nil {
@@ -933,6 +954,8 @@ func getFolderFromTemplate(folder vfs.BaseVirtualFolder, name string) vfs.BaseVi
 	switch folder.FsConfig.Provider {
 	case sdk.CryptedFilesystemProvider:
 		folder.FsConfig.CryptConfig = getCryptFsFromTemplate(folder.FsConfig.CryptConfig, replacements)
+	case sdk.MantaFilesystemProvider:
+		folder.FsConfig.MantaConfig = getMantaFsFromTemplate(folder.FsConfig.MantaConfig, replacements)
 	case sdk.S3FilesystemProvider:
 		folder.FsConfig.S3Config = getS3FsFromTemplate(folder.FsConfig.S3Config, replacements)
 	case sdk.GCSFilesystemProvider:
@@ -953,6 +976,10 @@ func getCryptFsFromTemplate(fsConfig vfs.CryptFsConfig, replacements map[string]
 			fsConfig.Passphrase = kms.NewPlainSecret(payload)
 		}
 	}
+	return fsConfig
+}
+
+func getMantaFsFromTemplate(fsConfig vfs.MantaFsConfig, replacements map[string]string) vfs.MantaFsConfig {
 	return fsConfig
 }
 
@@ -1017,6 +1044,8 @@ func getUserFromTemplate(user dataprovider.User, template userTemplateFields) da
 	switch user.FsConfig.Provider {
 	case sdk.CryptedFilesystemProvider:
 		user.FsConfig.CryptConfig = getCryptFsFromTemplate(user.FsConfig.CryptConfig, replacements)
+	case sdk.MantaFilesystemProvider:
+		user.FsConfig.MantaConfig = getMantaFsFromTemplate(user.FsConfig.MantaConfig, replacements)
 	case sdk.S3FilesystemProvider:
 		user.FsConfig.S3Config = getS3FsFromTemplate(user.FsConfig.S3Config, replacements)
 	case sdk.GCSFilesystemProvider:
@@ -1610,7 +1639,7 @@ func handleWebUpdateUserPost(w http.ResponseWriter, r *http.Request) {
 	}
 	updateEncryptedSecrets(&updatedUser.FsConfig, user.FsConfig.S3Config.AccessSecret, user.FsConfig.AzBlobConfig.AccountKey,
 		user.FsConfig.AzBlobConfig.SASURL, user.FsConfig.GCSConfig.Credentials, user.FsConfig.CryptConfig.Passphrase,
-		user.FsConfig.SFTPConfig.Password, user.FsConfig.SFTPConfig.PrivateKey)
+		user.FsConfig.SFTPConfig.Password, user.FsConfig.SFTPConfig.PrivateKey, user.FsConfig.MantaConfig.PrivateKey)
 
 	err = dataprovider.UpdateUser(&updatedUser)
 	if err == nil {
@@ -1726,7 +1755,7 @@ func handleWebUpdateFolderPost(w http.ResponseWriter, r *http.Request) {
 	updatedFolder.FsConfig.SetEmptySecretsIfNil()
 	updateEncryptedSecrets(&updatedFolder.FsConfig, folder.FsConfig.S3Config.AccessSecret, folder.FsConfig.AzBlobConfig.AccountKey,
 		folder.FsConfig.AzBlobConfig.SASURL, folder.FsConfig.GCSConfig.Credentials, folder.FsConfig.CryptConfig.Passphrase,
-		folder.FsConfig.SFTPConfig.Password, folder.FsConfig.SFTPConfig.PrivateKey)
+		folder.FsConfig.SFTPConfig.Password, folder.FsConfig.SFTPConfig.PrivateKey, folder.FsConfig.MantaConfig.PrivateKey)
 
 	err = dataprovider.UpdateFolder(updatedFolder, folder.Users)
 	if err != nil {

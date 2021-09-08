@@ -60,12 +60,14 @@ func updateFolder(w http.ResponseWriter, r *http.Request) {
 	currentCryptoPassphrase := folder.FsConfig.CryptConfig.Passphrase
 	currentSFTPPassword := folder.FsConfig.SFTPConfig.Password
 	currentSFTPKey := folder.FsConfig.SFTPConfig.PrivateKey
+	currentMantaKey:= folder.FsConfig.MantaConfig.PrivateKey
 
 	folder.FsConfig.S3Config = vfs.S3FsConfig{}
 	folder.FsConfig.AzBlobConfig = vfs.AzBlobFsConfig{}
 	folder.FsConfig.GCSConfig = vfs.GCSFsConfig{}
 	folder.FsConfig.CryptConfig = vfs.CryptFsConfig{}
 	folder.FsConfig.SFTPConfig = vfs.SFTPFsConfig{}
+	folder.FsConfig.MantaConfig = vfs.MantaFsConfig{}
 	err = render.DecodeJSON(r.Body, &folder)
 	if err != nil {
 		sendAPIResponse(w, r, err, "", http.StatusBadRequest)
@@ -75,7 +77,7 @@ func updateFolder(w http.ResponseWriter, r *http.Request) {
 	folder.Name = name
 	folder.FsConfig.SetEmptySecretsIfNil()
 	updateEncryptedSecrets(&folder.FsConfig, currentS3AccessSecret, currentAzAccountKey, currentAzSASUrl, currentGCSCredentials,
-		currentCryptoPassphrase, currentSFTPPassword, currentSFTPKey)
+		currentCryptoPassphrase, currentSFTPPassword, currentSFTPKey, currentMantaKey,)
 	err = dataprovider.UpdateFolder(&folder, users)
 	if err != nil {
 		sendAPIResponse(w, r, err, "", getRespStatus(err))

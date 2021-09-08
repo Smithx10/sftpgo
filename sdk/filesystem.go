@@ -8,6 +8,7 @@ type FilesystemProvider int
 // supported values for FilesystemProvider
 const (
 	LocalFilesystemProvider     FilesystemProvider = iota // Local
+	MantaFilesystemProvider                               // Joyent Object Storage
 	S3FilesystemProvider                                  // AWS S3 compatible
 	GCSFilesystemProvider                                 // Google Cloud Storage
 	AzureBlobFilesystemProvider                           // Azure Blob Storage
@@ -29,7 +30,9 @@ func GetProviderByName(name string) FilesystemProvider {
 		return AzureBlobFilesystemProvider
 	case "4", "cryptfs":
 		return CryptedFilesystemProvider
-	case "5", "sftpfs":
+	case "5", "mantafs":
+		return MantaFilesystemProvider
+	case "6", "sftpfs":
 		return SFTPFilesystemProvider
 	}
 
@@ -42,6 +45,8 @@ func (p FilesystemProvider) Name() string {
 	switch p {
 	case LocalFilesystemProvider:
 		return "osfs"
+	case MantaFilesystemProvider:
+		return "mantafs"
 	case S3FilesystemProvider:
 		return "s3fs"
 	case GCSFilesystemProvider:
@@ -61,6 +66,8 @@ func (p FilesystemProvider) ShortInfo() string {
 	switch p {
 	case LocalFilesystemProvider:
 		return "Local"
+	case MantaFilesystemProvider:
+		return "Joyent Object Storage"
 	case S3FilesystemProvider:
 		return "AWS S3 (Compatible)"
 	case GCSFilesystemProvider:
@@ -81,16 +88,17 @@ func ListProviders() []FilesystemProvider {
 		LocalFilesystemProvider, S3FilesystemProvider,
 		GCSFilesystemProvider, AzureBlobFilesystemProvider,
 		CryptedFilesystemProvider, SFTPFilesystemProvider,
+		MantaFilesystemProvider,
 	}
 }
 
 type MantaFsConfig struct {
-	Path        string `json:"path,omitempty"`
-	URL         string `json:"url,omitempty"`
-	Account     string `json:"account,omitempty"`
-	KeyMaterial string `json:"key_material,omitempty"`
-	KeyId       string `json:"key_id,omitempty"`
-	User        string `json:"user,omitempty"`
+	Path       string      `json:"path,omitempty"`
+	URL        string      `json:"url,omitempty"`
+	Account    string      `json:"account,omitempty"`
+	PrivateKey *kms.Secret `json:"private_key,omitempty"`
+	KeyId      string      `json:"key_id,omitempty"`
+	User       string      `json:"user,omitempty"`
 }
 
 // S3FsConfig defines the configuration for S3 based filesystem
@@ -216,10 +224,11 @@ type SFTPFsConfig struct {
 
 // Filesystem defines filesystem details
 type Filesystem struct {
-	Provider     FilesystemProvider `json:"provider"`
-	S3Config     S3FsConfig         `json:"s3config,omitempty"`
-	GCSConfig    GCSFsConfig        `json:"gcsconfig,omitempty"`
-	AzBlobConfig AzBlobFsConfig     `json:"azblobconfig,omitempty"`
-	CryptConfig  CryptFsConfig      `json:"cryptconfig,omitempty"`
-	SFTPConfig   SFTPFsConfig       `json:"sftpconfig,omitempty"`
+	Provider      FilesystemProvider `json:"provider"`
+	S3Config      S3FsConfig         `json:"s3config,omitempty"`
+	GCSConfig     GCSFsConfig        `json:"gcsconfig,omitempty"`
+	AzBlobConfig  AzBlobFsConfig     `json:"azblobconfig,omitempty"`
+	CryptConfig   CryptFsConfig      `json:"cryptconfig,omitempty"`
+	MantaFsConfig MantaFsConfig      `json:"mantaconfig,omitempty"`
+	SFTPConfig    SFTPFsConfig       `json:"sftpconfig,omitempty"`
 }

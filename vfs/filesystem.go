@@ -50,6 +50,9 @@ func (f *Filesystem) SetEmptySecretsIfNil() {
 	if f.SFTPConfig.PrivateKey == nil {
 		f.SFTPConfig.PrivateKey = kms.NewEmptySecret()
 	}
+	if f.MantaConfig.PrivateKey == nil {
+		f.MantaConfig.PrivateKey = kms.NewEmptySecret()
+	}
 }
 
 // SetNilSecretsIfEmpty set the secrets to nil if empty.
@@ -77,6 +80,9 @@ func (f *Filesystem) SetNilSecretsIfEmpty() {
 	if f.SFTPConfig.PrivateKey != nil && f.SFTPConfig.PrivateKey.IsEmpty() {
 		f.SFTPConfig.PrivateKey = nil
 	}
+	if f.MantaConfig.PrivateKey != nil && f.MantaConfig.PrivateKey.IsEmpty() {
+		f.MantaConfig.PrivateKey = nil
+	}
 }
 
 // IsEqual returns true if the fs is equal to other
@@ -85,6 +91,8 @@ func (f *Filesystem) IsEqual(other *Filesystem) bool {
 		return false
 	}
 	switch f.Provider {
+	case sdk.MantaFilesystemProvider:
+		return f.MantaConfig.isEqual(&other.MantaConfig)
 	case sdk.S3FilesystemProvider:
 		return f.S3Config.isEqual(&other.S3Config)
 	case sdk.GCSFilesystemProvider:
@@ -104,6 +112,15 @@ func (f *Filesystem) IsEqual(other *Filesystem) bool {
 // Filesystem.*Config to their zero value if successful
 func (f *Filesystem) Validate(helper ValidatorHelper) error {
 	switch f.Provider {
+	case sdk.MantaFilesystemProvider:
+		if err := f.MantaConfig.Validate(); err != nil {
+			return util.NewValidationError(fmt.Sprintf("could not validate mantaconfig: %v", err))
+		}
+		f.GCSConfig = GCSFsConfig{}
+		f.AzBlobConfig = AzBlobFsConfig{}
+		f.CryptConfig = CryptFsConfig{}
+		f.SFTPConfig = SFTPFsConfig{}
+		return nil
 	case sdk.S3FilesystemProvider:
 		if err := f.S3Config.Validate(); err != nil {
 			return util.NewValidationError(fmt.Sprintf("could not validate s3config: %v", err))
@@ -199,6 +216,10 @@ func (f *Filesystem) HasRedactedSecret() bool {
 		if f.SFTPConfig.PrivateKey.IsRedacted() {
 			return true
 		}
+	case sdk.MantaFilesystemProvider:
+		if f.MantaConfig.PrivateKey.IsRedacted() {
+			return true
+		}
 	}
 
 	return false
@@ -219,6 +240,8 @@ func (f *Filesystem) HideConfidentialData() {
 	case sdk.SFTPFilesystemProvider:
 		f.SFTPConfig.Password.Hide()
 		f.SFTPConfig.PrivateKey.Hide()
+	case sdk.MantaFilesystemProvider:
+		f.MantaConfig.PrivateKey.Hide()
 	}
 }
 
@@ -227,6 +250,16 @@ func (f *Filesystem) GetACopy() Filesystem {
 	f.SetEmptySecretsIfNil()
 	fs := Filesystem{
 		Provider: f.Provider,
+		MantaConfig: MantaFsConfig{
+			MantaFsConfig: sdk.MantaFsConfig{
+				Path:       f.MantaConfig.Path,
+				URL:        f.MantaConfig.URL,
+				Account:    f.MantaConfig.Account,
+				User:       f.MantaConfig.User,
+				PrivateKey: f.MantaConfig.PrivateKey.Clone(),
+				KeyId:      f.MantaConfig.KeyId,
+			},
+		},
 		S3Config: S3FsConfig{
 			S3FsConfig: sdk.S3FsConfig{
 				Bucket:              f.S3Config.Bucket,

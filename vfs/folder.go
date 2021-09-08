@@ -86,6 +86,8 @@ func (v *BaseVirtualFolder) GetStorageDescrition() string {
 		return fmt.Sprintf("GCS: %v", v.FsConfig.GCSConfig.Bucket)
 	case sdk.AzureBlobFilesystemProvider:
 		return fmt.Sprintf("AzBlob: %v", v.FsConfig.AzBlobConfig.Container)
+	case sdk.MantaFilesystemProvider:
+		return fmt.Sprintf("Manta: %v", v.MappedPath)
 	case sdk.CryptedFilesystemProvider:
 		return fmt.Sprintf("Encrypted: %v", v.MappedPath)
 	case sdk.SFTPFilesystemProvider:
@@ -115,6 +117,8 @@ func (v *BaseVirtualFolder) hideConfidentialData() {
 	case sdk.SFTPFilesystemProvider:
 		v.FsConfig.SFTPConfig.Password.Hide()
 		v.FsConfig.SFTPConfig.PrivateKey.Hide()
+	case sdk.MantaFilesystemProvider:
+		v.FsConfig.MantaConfig.PrivateKey.Hide()
 	}
 }
 
@@ -155,6 +159,10 @@ func (v *BaseVirtualFolder) HasRedactedSecret() bool {
 		if v.FsConfig.SFTPConfig.PrivateKey.IsRedacted() {
 			return true
 		}
+	case sdk.MantaFilesystemProvider:
+		if v.FsConfig.MantaConfig.PrivateKey.IsRedacted() {
+			return true
+		}
 	}
 	return false
 }
@@ -177,6 +185,8 @@ type VirtualFolder struct {
 // GetFilesystem returns the filesystem for this folder
 func (v *VirtualFolder) GetFilesystem(connectionID string, forbiddenSelfUsers []string) (Fs, error) {
 	switch v.FsConfig.Provider {
+	case sdk.MantaFilesystemProvider:
+		return NewMantaFs(connectionID, v.MappedPath, v.VirtualPath, v.FsConfig.MantaConfig)
 	case sdk.S3FilesystemProvider:
 		return NewS3Fs(connectionID, v.MappedPath, v.VirtualPath, v.FsConfig.S3Config)
 	case sdk.GCSFilesystemProvider:
