@@ -133,4 +133,5 @@ replace (
 	github.com/jlaffaye/ftp => github.com/drakkan/ftp v0.0.0-20201114075148-9b9adce499a9
 	golang.org/x/crypto => github.com/drakkan/crypto v0.0.0-20210904112610-0ac2a582e240
 	golang.org/x/net => github.com/drakkan/net v0.0.0-20210904112723-31299b6735d2
+        github.com/joyent/triton-go/v2 => /home/arch/git/sftp-triton-go/triton-go
 )

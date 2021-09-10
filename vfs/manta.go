@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eikenb/pipeat"
@@ -22,6 +24,10 @@ import (
 	triton "github.com/joyent/triton-go/v2"
 	"github.com/joyent/triton-go/v2/authentication"
 	"github.com/joyent/triton-go/v2/storage"
+)
+
+const (
+	rpath = "/stor"
 )
 
 // MantaFs is a Fs implementation for Joyent Manta compatible object storages
@@ -90,22 +96,35 @@ func (fs *MantaFs) Stat(name string) (os.FileInfo, error) {
 		}
 		return NewFileInfo(name, true, 0, time.Now(), false), nil
 	}
+
+	info, err := fs.headObject(name)
+	if err != nil {
+		return nil, err
+	}
+
+	isDir := false
+	size := info.ContentLength
+	if strings.HasSuffix(info.ContentType, "type=directory") {
+		isDir = true
+		size = info.ResultSetSize
+	}
+
+	fmt.Println("RAWR", info)
+
+	return NewFileInfo(name, isDir, int64(size), info.LastModified, false), nil
+}
+
+func (fs *MantaFs) headObject(name string) (*storage.GetInfoOutput, error) {
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
 	defer cancelFn()
 	info, err := fs.svc.Objects().GetInfo(ctx, &storage.GetInfoInput{
 		ObjectPath: name,
 	})
 	if err != nil {
-		fmt.Println("ERRORStat: " + err.Error())
 		return nil, err
 	}
 
-	isDir := false
-	if strings.HasSuffix(info.ContentType, "type=directory") {
-		isDir = true
-	}
-
-	return NewFileInfo(name, isDir, int64(info.ContentLength), info.LastModified, false), nil
+	return info, nil
 }
 
 // Lstat returns a FileInfo describing the named file
@@ -155,7 +174,11 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 		return nil, nil, nil, err
 	}
 	p := NewPipeWriter(w)
+
 	ctx, cancelFn := context.WithCancel(context.Background())
+	ct := mime.TypeByExtension(path.Ext(name))
+
+	fmt.Println("tooter", ct)
 
 	go func() {
 		key := name
@@ -171,10 +194,10 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 				ObjectPath:   key,
 				ObjectReader: r,
 				ForceInsert:  true,
+				Headers: map[string]string{
+					"Content-Type": ct,
+				},
 			})
-		}
-		if err != nil {
-			r.CloseWithError(err) //nolint:errcheck
 		}
 		p.Done(err)
 		fsLog(fs, logger.LevelDebug, "upload completed, path: %#v, readed bytes: %v, err: %v", name, r.GetReadedBytes(), err)
@@ -192,7 +215,12 @@ func (fs *MantaFs) Rename(source, target string) error {
 // Remove removes the named file or (empty) directory.
 func (fs *MantaFs) Remove(name string, isDir bool) error {
 	fmt.Println("INSIDE Remove")
-	return nil
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	defer cancelFn()
+	err := fs.svc.Dir().Delete(ctx, &storage.DeleteDirectoryInput{
+		DirectoryName: name,
+	})
+	return err
 }
 
 // Mkdir creates a new directory with the specified name and default permissions
@@ -249,7 +277,7 @@ func (*MantaFs) Truncate(name string, size int64) error {
 // a list of directory entries.
 func (fs *MantaFs) ReadDir(dirname string) ([]os.FileInfo, error) {
 	fmt.Println("INSIDE ReadDir")
-	fmt.Println(dirname)
+	fmt.Println("READ_DIR", dirname)
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
 	defer cancelFn()
 	dirList, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
@@ -265,7 +293,6 @@ func (fs *MantaFs) ReadDir(dirname string) ([]os.FileInfo, error) {
 		if e.Type == "directory" {
 			dir = true
 		}
-                fmt.Println("E: ", e.Name, e.Size)
 		result = append(result, NewFileInfo(e.Name, dir, int64(e.Size), e.ModifiedTime, false))
 	}
 
@@ -320,7 +347,8 @@ func (*MantaFs) IsNotSupported(err error) bool {
 // CheckRootPath creates the specified local root directory if it does not exists
 func (fs *MantaFs) CheckRootPath(username string, uid int, gid int) bool {
 	osFs := NewOsFs(fs.ConnectionID(), fs.localTempDir, "")
-	fmt.Println("INSIDE_CHECK_ROOT_PATH: "+username, uid, gid, osFs.CheckRootPath(username, uid, gid))
+	// Create Root Path on Manta
+	fs.Mkdir(rpath + fs.config.Path)
 	// we need a local directory for temporary files
 	return osFs.CheckRootPath(username, uid, gid)
 }
@@ -329,14 +357,79 @@ func (fs *MantaFs) CheckRootPath(username string, uid int, gid int) bool {
 // and their size
 func (fs *MantaFs) ScanRootDirContents() (int, int64, error) {
 	fmt.Println("INSIDE_ScanRootDirContents")
-	return 2, 2, nil
+	return fs.getFileCounts()
+}
+
+func (fs *MantaFs) getFileCounts() (int, int64, error) {
+	ch := make(chan *RootScanResult)
+	var wg sync.WaitGroup
+
+	// First call to Factorial recursive function
+	wg.Add(1)
+	go fs.recurseDirectories(rpath + fs.config.Path, ch, &wg)
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	count := 0
+	size := 0
+	for a := range ch {
+		count = count + a.Count
+		size = size + a.Size
+	}
+
+	fmt.Printf("Count: %d, Size: %d\n", count, size)
+	return count, int64(size), nil
+}
+
+func (fs *MantaFs) recurseDirectories(path string, result chan *RootScanResult, wg *sync.WaitGroup) {
+	defer wg.Done()
+	ctx := context.Background()
+	out, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
+		DirectoryName: path,
+	})
+	if err != nil {
+		fmt.Printf("could not find %q\n", path)
+		return
+	}
+
+	if out.ResultSetSize == 0 {
+		return
+	}
+
+	for _, e := range out.Entries {
+		if e.Type == "directory" {
+			np := path + "/" + e.Name
+			wg.Add(1)
+			go fs.recurseDirectories(np, result, wg)
+		}
+		if e.Type == "object" {
+			result <- &RootScanResult{
+				Size:  int(e.Size),
+				Count: 0,
+			}
+		}
+	}
+
+	result <- &RootScanResult{
+		Size:  0,
+		Count: int(out.ResultSetSize),
+	}
+
+	return
+}
+
+type RootScanResult struct {
+	Size  int
+	Count int
 }
 
 // GetDirSize returns the number of files and the size for a folder
 // including any subfolders
-func (*MantaFs) GetDirSize(dirname string) (int, int64, error) {
+func (fs *MantaFs) GetDirSize(dirname string) (int, int64, error) {
 	fmt.Println("INSIDE_GET_DIR_SIZE")
-	return 0, 0, nil
+	return fs.getFileCounts()
 }
 
 // GetAtomicUploadPath returns the path to use for an atomic upload.
@@ -348,7 +441,7 @@ func (*MantaFs) GetAtomicUploadPath(name string) string {
 // GetRelativePath returns the path for a file relative to the user's home dir.
 // This is the path as seen by SFTPGo users
 func (fs *MantaFs) GetRelativePath(name string) string {
-	fmt.Println("INSIDE_GET_RELATIVE_PATH")
+	fmt.Println("INSIDE_GET_RELATIVE_PATH: " + name)
 	return "/rawr"
 }
 
@@ -390,13 +483,17 @@ func (fs *MantaFs) ResolvePath(virtualPath string) (string, error) {
 	if !path.IsAbs(virtualPath) {
 		virtualPath = path.Clean("/" + virtualPath)
 	}
-	return fs.Join("/", fs.config.KeyPrefix, virtualPath), nil
+	fmt.Println(fs.Join("/", fs.config.KeyPrefix, virtualPath))
+	return fs.Join(rpath, fs.config.Path, fs.config.KeyPrefix, virtualPath), nil
 }
 
 // GetMimeType returns the content type
 func (fs *MantaFs) GetMimeType(name string) (string, error) {
-	fmt.Println("INSIDE_GET_MIME_TYPE")
-	return "rawr", nil
+	info, err := fs.headObject(name)
+	if err != nil {
+		return "", err
+	}
+	return info.ContentType, nil
 }
 
 // Close closes the fs
