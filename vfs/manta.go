@@ -89,7 +89,6 @@ func (fs *MantaFs) ConnectionID() string {
 
 // Stat returns a FileInfo describing the named file
 func (fs *MantaFs) Stat(name string) (os.FileInfo, error) {
-	fmt.Println("IN_STAT: " + name)
 	if name == "" || name == "." {
 		if fs.svc != nil {
 			return nil, fmt.Errorf("Empty Name")
@@ -109,7 +108,6 @@ func (fs *MantaFs) Stat(name string) (os.FileInfo, error) {
 		size = info.ResultSetSize
 	}
 
-	fmt.Println("RAWR", info)
 
 	return NewFileInfo(name, isDir, int64(size), info.LastModified, false), nil
 }
@@ -129,13 +127,11 @@ func (fs *MantaFs) headObject(name string) (*storage.GetInfoOutput, error) {
 
 // Lstat returns a FileInfo describing the named file
 func (fs *MantaFs) Lstat(name string) (os.FileInfo, error) {
-	fmt.Println("IN_LSTAT: " + name)
 	return fs.Stat(name)
 }
 
 // Open opens the named file for reading
 func (fs *MantaFs) Open(name string, offset int64) (File, *pipeat.PipeReaderAt, func(), error) {
-	fmt.Println("INSIDE Open")
 	r, w, err := pipeat.PipeInDir(fs.localTempDir)
 	if err != nil {
 		return nil, nil, nil, err
@@ -168,7 +164,6 @@ func (fs *MantaFs) Open(name string, offset int64) (File, *pipeat.PipeReaderAt, 
 
 // Create creates or opens the named file for writing
 func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), error) {
-	fmt.Println("INSIDE Create: "+name, flag)
 	r, w, err := pipeat.PipeInDir(fs.localTempDir)
 	if err != nil {
 		return nil, nil, nil, err
@@ -178,7 +173,6 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 	ctx, cancelFn := context.WithCancel(context.Background())
 	ct := mime.TypeByExtension(path.Ext(name))
 
-	fmt.Println("tooter", ct)
 
 	go func() {
 		key := name
@@ -208,13 +202,11 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 }
 
 func (fs *MantaFs) Rename(source, target string) error {
-	fmt.Println("INSIDE Rename")
-	return nil
+	return ErrVfsUnsupported
 }
 
 // Remove removes the named file or (empty) directory.
 func (fs *MantaFs) Remove(name string, isDir bool) error {
-	fmt.Println("INSIDE Remove")
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
 	defer cancelFn()
 	err := fs.svc.Dir().Delete(ctx, &storage.DeleteDirectoryInput{
@@ -276,8 +268,6 @@ func (*MantaFs) Truncate(name string, size int64) error {
 // ReadDir reads the directory named by dirname and returns
 // a list of directory entries.
 func (fs *MantaFs) ReadDir(dirname string) ([]os.FileInfo, error) {
-	fmt.Println("INSIDE ReadDir")
-	fmt.Println("READ_DIR", dirname)
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
 	defer cancelFn()
 	dirList, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
@@ -315,11 +305,9 @@ func (*MantaFs) IsAtomicUploadSupported() bool {
 // IsNotExist returns a boolean indicating whether the error is known to
 // report that a file or directory does not exist
 func (*MantaFs) IsNotExist(err error) bool {
-	fmt.Println("INSIDE_IsNotExist")
 	if err == nil {
 		return false
 	}
-	fmt.Println(err.Error())
 
 	return strings.Contains(err.Error(), "404")
 
@@ -328,7 +316,6 @@ func (*MantaFs) IsNotExist(err error) bool {
 // IsPermission returns a boolean indicating whether the error is known to
 // report that permission is denied.
 func (*MantaFs) IsPermission(err error) bool {
-	fmt.Println("INSIDE_IsPermission")
 	if err == nil {
 		return false
 	}
@@ -337,7 +324,6 @@ func (*MantaFs) IsPermission(err error) bool {
 
 // IsNotSupported returns true if the error indicate an unsupported operation
 func (*MantaFs) IsNotSupported(err error) bool {
-	fmt.Println("INSIDE_IsNotSupported")
 	if err == nil {
 		return false
 	}
@@ -356,7 +342,6 @@ func (fs *MantaFs) CheckRootPath(username string, uid int, gid int) bool {
 // ScanRootDirContents returns the number of files contained in the bucket,
 // and their size
 func (fs *MantaFs) ScanRootDirContents() (int, int64, error) {
-	fmt.Println("INSIDE_ScanRootDirContents")
 	return fs.getFileCounts()
 }
 
@@ -364,9 +349,8 @@ func (fs *MantaFs) getFileCounts() (int, int64, error) {
 	ch := make(chan *RootScanResult)
 	var wg sync.WaitGroup
 
-	// First call to Factorial recursive function
 	wg.Add(1)
-	go fs.recurseDirectories(rpath + fs.config.Path, ch, &wg)
+	go fs.recurseDirectories(rpath+fs.config.Path, ch, &wg, false)
 	go func() {
 		wg.Wait()
 		close(ch)
@@ -379,11 +363,10 @@ func (fs *MantaFs) getFileCounts() (int, int64, error) {
 		size = size + a.Size
 	}
 
-	fmt.Printf("Count: %d, Size: %d\n", count, size)
 	return count, int64(size), nil
 }
 
-func (fs *MantaFs) recurseDirectories(path string, result chan *RootScanResult, wg *sync.WaitGroup) {
+func (fs *MantaFs) recurseDirectories(path string, result chan *RootScanResult, wg *sync.WaitGroup, walk bool) {
 	defer wg.Done()
 	ctx := context.Background()
 	out, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
@@ -399,22 +382,29 @@ func (fs *MantaFs) recurseDirectories(path string, result chan *RootScanResult, 
 	}
 
 	for _, e := range out.Entries {
+		np := path + "/" + e.Name
 		if e.Type == "directory" {
-			np := path + "/" + e.Name
 			wg.Add(1)
-			go fs.recurseDirectories(np, result, wg)
+			go fs.recurseDirectories(np, result, wg, walk)
 		}
-		if e.Type == "object" {
+		if e.Type == "object" && !walk {
 			result <- &RootScanResult{
 				Size:  int(e.Size),
 				Count: 0,
 			}
 		}
-	}
+		if walk {
+			result <- &RootScanResult{
+				Path:  np,
+				Entry: e,
+			}
 
-	result <- &RootScanResult{
-		Size:  0,
-		Count: int(out.ResultSetSize),
+		}
+	}
+	if !walk {
+		result <- &RootScanResult{
+			Count: int(out.ResultSetSize),
+		}
 	}
 
 	return
@@ -423,17 +413,18 @@ func (fs *MantaFs) recurseDirectories(path string, result chan *RootScanResult, 
 type RootScanResult struct {
 	Size  int
 	Count int
+	Entry *storage.DirectoryEntry
+	Path  string
 }
 
 // GetDirSize returns the number of files and the size for a folder
 // including any subfolders
 func (fs *MantaFs) GetDirSize(dirname string) (int, int64, error) {
-	fmt.Println("INSIDE_GET_DIR_SIZE")
 	return fs.getFileCounts()
 }
 
 // GetAtomicUploadPath returns the path to use for an atomic upload.
-// S3 uploads are already atomic, we never call this method for Manta
+// Manta uploads are already atomic, we never call this method for Manta
 func (*MantaFs) GetAtomicUploadPath(name string) string {
 	return ""
 }
@@ -448,42 +439,46 @@ func (fs *MantaFs) GetRelativePath(name string) string {
 // Walk walks the file tree rooted at root, calling walkFn for each file or
 // directory in the tree, including root. The result are unordered
 func (fs *MantaFs) Walk(root string, walkFn filepath.WalkFunc) error {
-	fmt.Println("INSIDE WALK")
-	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
-	defer cancelFn()
-	dirList, err := fs.svc.Dir().List(ctx, &storage.ListDirectoryInput{
-		DirectoryName: fs.config.Path,
-	})
-	if err != nil {
-		return err
+	ch := make(chan *RootScanResult)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go fs.recurseDirectories(rpath+fs.config.Path, ch, &wg, true)
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	for a := range ch {
+		isDir := false
+		if a.Entry.Type == "directory" {
+			isDir = true
+
+		}
+		walkFn(a.Path, NewFileInfo(a.Entry.Name, isDir, int64(a.Entry.Size), a.Entry.ModifiedTime, false), nil)
 	}
 
-	fmt.Println(dirList)
 	return nil
 }
 
 // Join joins any number of path elements into a single path
 func (*MantaFs) Join(elem ...string) string {
-	fmt.Println("INSIDE_JOIN")
 	return path.Join(elem...)
 }
 
 // HasVirtualFolders returns true if folders are emulated
 func (*MantaFs) HasVirtualFolders() bool {
-	fmt.Println("INSIDE_HAS_VIRT_FOLDERS")
 	return true
 }
 
 // ResolvePath returns the matching filesystem path for the specified virtual path
 func (fs *MantaFs) ResolvePath(virtualPath string) (string, error) {
-	fmt.Println("INSIDE_RESOLVE_PATH: ", virtualPath)
 	if fs.mountPath != "" {
 		virtualPath = strings.TrimPrefix(virtualPath, fs.mountPath)
 	}
 	if !path.IsAbs(virtualPath) {
 		virtualPath = path.Clean("/" + virtualPath)
 	}
-	fmt.Println(fs.Join("/", fs.config.KeyPrefix, virtualPath))
 	return fs.Join(rpath, fs.config.Path, fs.config.KeyPrefix, virtualPath), nil
 }
 
@@ -498,7 +493,6 @@ func (fs *MantaFs) GetMimeType(name string) (string, error) {
 
 // Close closes the fs
 func (*MantaFs) Close() error {
-	fmt.Println("INSIDE_CLOSE")
 	return nil
 }
 
