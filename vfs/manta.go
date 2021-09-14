@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/eikenb/pipeat"
@@ -108,7 +109,6 @@ func (fs *MantaFs) Stat(name string) (os.FileInfo, error) {
 		size = info.ResultSetSize
 	}
 
-
 	return NewFileInfo(name, isDir, int64(size), info.LastModified, false), nil
 }
 
@@ -173,7 +173,6 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 	ctx, cancelFn := context.WithCancel(context.Background())
 	ct := mime.TypeByExtension(path.Ext(name))
 
-
 	go func() {
 		key := name
 		defer cancelFn()
@@ -202,7 +201,26 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 }
 
 func (fs *MantaFs) Rename(source, target string) error {
-	return ErrVfsUnsupported
+	if fs.config.V2 {
+		return ErrVfsUnsupported
+	}
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	defer cancelFn()
+	err := fs.mkLink(ctx, source, target)
+	if err != nil {
+		return err
+	}
+	err = fs.Remove(source, false)
+	return err
+}
+
+func (fs *MantaFs) mkLink(ctx context.Context, source, target string) error {
+	err := fs.svc.SnapLinks().Put(ctx, &storage.PutSnapLinkInput{
+		SourcePath: source,
+		LinkPath:   target,
+	})
+
+	return err
 }
 
 // Remove removes the named file or (empty) directory.
@@ -228,14 +246,63 @@ func (fs *MantaFs) Mkdir(name string) error {
 	return w.Close()
 }
 
-// MkdirAll does nothing, we don't have folder
-func (*MantaFs) MkdirAll(name string, uid int, gid int) error {
+// MkdirAll acts like mkdir -p
+func (fs *MantaFs) MkdirAll(name string, uid int, gid int) error {
+	// Fast path: does the directory already exist?
+	dir, err := fs.Stat(name)
+	if err == nil {
+		if dir.IsDir() {
+			return nil
+		}
+		return &os.PathError{Op: "mkdir", Path: name, Err: syscall.ENOTDIR}
+	}
+	// Slow path: make sure parent exists and then call Mkdir for path.
+	i := len(name)
+	for i > 0 && os.IsPathSeparator(name[i-1]) { // Skip trailing path separator.
+		i--
+	}
+
+	j := i
+	for j > 0 && !os.IsPathSeparator(name[j-1]) { // Scan backward over element.
+		j--
+	}
+
+	if j > 1 {
+		// Create parent.
+		err = fs.MkdirAll(fixRootDirectory(name[:j-1]), uid, gid)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parent now exists; invoke Mkdir and use its result.
+	err = fs.Mkdir(name)
+	if err != nil {
+		// Handle arguments like "foo/." by
+		// double-checking that directory doesn't exist.
+		dir, err1 := fs.Lstat(name)
+		if err1 == nil && dir.IsDir() {
+			return nil
+		}
+		return err
+	}
+
 	return nil
 }
 
+func fixRootDirectory(p string) string {
+	return p
+}
+
 // Symlink creates source as a symbolic link to target.
-func (*MantaFs) Symlink(source, target string) error {
-	return ErrVfsUnsupported
+func (fs *MantaFs) Symlink(source, target string) error {
+	if fs.config.V2 {
+		return ErrVfsUnsupported
+	}
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+	defer cancelFn()
+	err := fs.mkLink(ctx, source, target)
+	return err
 }
 
 // Readlink returns the destination of the named symbolic link
@@ -332,11 +399,18 @@ func (*MantaFs) IsNotSupported(err error) bool {
 
 // CheckRootPath creates the specified local root directory if it does not exists
 func (fs *MantaFs) CheckRootPath(username string, uid int, gid int) bool {
-	osFs := NewOsFs(fs.ConnectionID(), fs.localTempDir, "")
-	// Create Root Path on Manta
-	fs.Mkdir(rpath + fs.config.Path)
 	// we need a local directory for temporary files
-	return osFs.CheckRootPath(username, uid, gid)
+	osFs := NewOsFs(fs.ConnectionID(), fs.localTempDir, "")
+	osFs.CheckRootPath(username, uid, gid)
+	if fs.config.Path == "/" {
+		return true
+	}
+	if err := fs.MkdirAll(rpath+fs.config.Path, uid, gid); err != nil {
+		fsLog(fs, logger.LevelDebug, "error creating root directory %#v for user %#v: %v", fs.config.Path, username, err)
+		return false
+	}
+	// we need a local directory for temporary files
+	return true
 }
 
 // ScanRootDirContents returns the number of files contained in the bucket,
@@ -432,8 +506,23 @@ func (*MantaFs) GetAtomicUploadPath(name string) string {
 // GetRelativePath returns the path for a file relative to the user's home dir.
 // This is the path as seen by SFTPGo users
 func (fs *MantaFs) GetRelativePath(name string) string {
-	fmt.Println("INSIDE_GET_RELATIVE_PATH: " + name)
-	return "/rawr"
+	rel := path.Clean(name)
+	if rel == "." {
+		rel = ""
+	}
+	if !path.IsAbs(rel) {
+		return "/" + rel
+	}
+	if fs.config.Path != "/" {
+		if !strings.HasPrefix(rel, fs.config.Path) {
+			rel = "/"
+		}
+		rel = path.Clean("/" + strings.TrimPrefix(rel, fs.config.Path))
+	}
+	if fs.mountPath != "" {
+		rel = path.Join(fs.mountPath, rel)
+	}
+	return rel
 }
 
 // Walk walks the file tree rooted at root, calling walkFn for each file or
@@ -479,7 +568,7 @@ func (fs *MantaFs) ResolvePath(virtualPath string) (string, error) {
 	if !path.IsAbs(virtualPath) {
 		virtualPath = path.Clean("/" + virtualPath)
 	}
-	return fs.Join(rpath, fs.config.Path, fs.config.KeyPrefix, virtualPath), nil
+	return fs.Join(rpath, fs.config.Path, fs.config.Prefix, virtualPath), nil
 }
 
 // GetMimeType returns the content type

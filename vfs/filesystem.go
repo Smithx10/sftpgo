@@ -116,6 +116,9 @@ func (f *Filesystem) Validate(helper ValidatorHelper) error {
 		if err := f.MantaConfig.Validate(); err != nil {
 			return util.NewValidationError(fmt.Sprintf("could not validate mantaconfig: %v", err))
 		}
+		if err := f.MantaConfig.EncryptCredentials(helper.GetEncryptionAdditionalData()); err != nil {
+			return util.NewValidationError(fmt.Sprintf("could not encrypt manta private key: %v", err))
+		}
 		f.GCSConfig = GCSFsConfig{}
 		f.AzBlobConfig = AzBlobFsConfig{}
 		f.CryptConfig = CryptFsConfig{}

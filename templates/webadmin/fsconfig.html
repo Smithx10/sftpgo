@@ -52,6 +52,13 @@
                     rows="3">{{if .MantaConfig.PrivateKey.IsEncrypted}}{{.RedactedSecret}}{{else}}{{.MantaConfig.PrivateKey.GetPayload}}{{end}}</textarea>
             </div>
         </div>
+        <div class="form-group fsconfig fsconfig-mantafs">
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input" id="idMantaV2" name="manta_v2"
+                    {{if .MantaConfig.V2}}checked{{end}}>
+                <label for="idMantaV2" class="form-check-label">Use Mantav2: No Rename or Symlink Support</label>
+            </div>
+        </div>
         <div class="form-group row fsconfig fsconfig-s3fs">
             <label for="idS3Bucket" class="col-sm-2 col-form-label">Bucket</label>
             <div class="col-sm-3">

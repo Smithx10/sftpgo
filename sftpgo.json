@@ -8,7 +8,7 @@
       "hook": ""
     },
     "setstat_mode": 0,
-    "temp_path": "",
+    "temp_path": "/mnt/sftptmp",
     "proxy_protocol": 0,
     "proxy_allowed": [],
     "startup_hook": "",

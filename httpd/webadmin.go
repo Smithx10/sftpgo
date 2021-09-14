@@ -980,6 +980,12 @@ func getCryptFsFromTemplate(fsConfig vfs.CryptFsConfig, replacements map[string]
 }
 
 func getMantaFsFromTemplate(fsConfig vfs.MantaFsConfig, replacements map[string]string) vfs.MantaFsConfig {
+	fsConfig.Prefix = replacePlaceholders(fsConfig.Prefix, replacements)
+	fsConfig.Account = replacePlaceholders(fsConfig.Account, replacements)
+	if fsConfig.PrivateKey != nil && fsConfig.PrivateKey.IsPlain() {
+		payload := replacePlaceholders(fsConfig.PrivateKey.GetPayload(), replacements)
+		fsConfig.PrivateKey = kms.NewPlainSecret(payload)
+	}
 	return fsConfig
 }
 

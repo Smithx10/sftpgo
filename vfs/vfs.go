@@ -145,22 +145,25 @@ type MantaFsConfig struct {
 
 // Validate returns an error if the configuration is not valid
 func (c *MantaFsConfig) Validate() error {
+	c.setEmptyCredentialsIfNil()
 	if c.Path == "" {
 		c.Path = "/"
 	}
 	if c.URL == "" {
 		return errors.New("URL cannot be empty")
 	}
+	if c.Account == "" {
+		return errors.New("Account cannot be empty")
+	}
+	if c.KeyId == "" {
+		return errors.New("KeyId cannot be empty")
+	}
 	if err := c.validateCredentials(); err != nil {
 		return err
 	}
-
-	//if c.User == "" {
-	//return errors.New("user cannot be empty")
-	//}
-	//if c.KeyMaterial == "" {
-	//return errors.New("key_material cannot be empty")
-	//}
+	if err := c.validateCredentials(); err != nil {
+		return err
+	}
 	return nil
 }
 func (c *MantaFsConfig) validateCredentials() error {
@@ -180,15 +183,38 @@ func (c *MantaFsConfig) setEmptyCredentialsIfNil() {
 }
 
 func (c *MantaFsConfig) isEqual(other *MantaFsConfig) bool {
+	if c.Account != other.Account {
+		return false
+	}
+	if c.KeyId != other.KeyId {
+		return false
+	}
+	if c.Path != other.Path {
+		return false
+	}
 	if c.URL != other.URL {
 		return false
 	}
-	if c.URL != other.Path {
+	if c.User != other.User {
+		return false
+	}
+	if c.V2 != other.V2 {
 		return false
 	}
 	c.setEmptyCredentialsIfNil()
 	other.setEmptyCredentialsIfNil()
 	return c.PrivateKey.IsEqual(other.PrivateKey)
+}
+
+// EncryptCredentials encrypts password and/or private key if they are in plain text
+func (c *MantaFsConfig) EncryptCredentials(additionalData string) error {
+	if c.PrivateKey.IsPlain() {
+		c.PrivateKey.SetAdditionalData(additionalData)
+		if err := c.PrivateKey.Encrypt(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // S3FsConfig defines the configuration for S3 based filesystem
