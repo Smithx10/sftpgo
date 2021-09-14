@@ -771,6 +771,9 @@ func getMantaConfig(r *http.Request) (vfs.MantaFsConfig, error) {
 	config.KeyId = r.Form.Get("manta_key_id")
 	config.User = r.Form.Get("manta_user")
 	config.PrivateKey = getSecretFromFormField(r, "manta_private_key")
+	if r.Form.Get("manta_v2") == "on" {
+		config.V2 = true
+	}
 	if err != nil {
 		return config, err
 	}

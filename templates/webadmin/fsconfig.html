@@ -46,7 +46,7 @@
             </div>
         </div>
         <div class="form-group row fsconfig fsconfig-mantafs">
-            <label for="idMantaPPrivateKey" class="col-sm-2 col-form-label">Private Key</label>
+            <label for="idMantaPrivateKey" class="col-sm-2 col-form-label">Private Key</label>
             <div class="col-sm-10">
                 <textarea type="password" class="form-control" id="idMantaPrivateKey" name="manta_private_key"
                     rows="3">{{if .MantaConfig.PrivateKey.IsEncrypted}}{{.RedactedSecret}}{{else}}{{.MantaConfig.PrivateKey.GetPayload}}{{end}}</textarea>

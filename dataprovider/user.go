@@ -93,7 +93,6 @@ func (u *User) GetFilesystem(connectionID string) (fs vfs.Fs, err error) {
 func (u *User) getRootFs(connectionID string) (fs vfs.Fs, err error) {
 	switch u.FsConfig.Provider {
 	case sdk.MantaFilesystemProvider:
-		logger.Warn(logSender, connectionID, "INSIDE_getRootFs")
 		return vfs.NewMantaFs(connectionID, u.GetHomeDir(), "", u.FsConfig.MantaConfig)
 	case sdk.S3FilesystemProvider:
 		return vfs.NewS3Fs(connectionID, u.GetHomeDir(), "", u.FsConfig.S3Config)

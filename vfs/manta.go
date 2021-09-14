@@ -506,22 +506,9 @@ func (*MantaFs) GetAtomicUploadPath(name string) string {
 // GetRelativePath returns the path for a file relative to the user's home dir.
 // This is the path as seen by SFTPGo users
 func (fs *MantaFs) GetRelativePath(name string) string {
-	rel := path.Clean(name)
-	if rel == "." {
-		rel = ""
-	}
-	if !path.IsAbs(rel) {
-		return "/" + rel
-	}
-	if fs.config.Path != "/" {
-		if !strings.HasPrefix(rel, fs.config.Path) {
-			rel = "/"
-		}
-		rel = path.Clean("/" + strings.TrimPrefix(rel, fs.config.Path))
-	}
-	if fs.mountPath != "" {
-		rel = path.Join(fs.mountPath, rel)
-	}
+	clean := path.Clean(name)
+	removePath := rpath + fs.config.Path
+	rel := strings.TrimPrefix(clean, removePath)
 	return rel
 }
 
