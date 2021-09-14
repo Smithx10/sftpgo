@@ -278,6 +278,101 @@ var (
 		Name: "sftpgo_http_server_errors_total",
 		Help: "The total number of HTTP requests served with 5xx status code",
 	})
+        
+	// totalMantaUploads is the metric that reports the total number of successful Manta uploads
+	totalMantaUploads = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_uploads_total",
+		Help: "The total number of successful Manta uploads",
+	})
+
+	// totalMantaDownloads is the metric that reports the total number of successful Manta downloads
+	totalMantaDownloads = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_downloads_total",
+		Help: "The total number of successful Manta downloads",
+	})
+
+	// totalMantaUploadErrors is the metric that reports the total number of Manta upload errors
+	totalMantaUploadErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_upload_errors_total",
+		Help: "The total number of Manta upload errors",
+	})
+
+	// totalMantaDownloadErrors is the metric that reports the total number of Manta download errors
+	totalMantaDownloadErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_download_errors_total",
+		Help: "The total number of Manta download errors",
+	})
+
+	// totalMantaUploadSize is the metric that reports the total Manta uploads size as bytes
+	totalMantaUploadSize = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_upload_size",
+		Help: "The total Manta upload size as bytes, partial uploads are included",
+	})
+
+	// totalMantaDownloadSize is the metric that reports the total Manta downloads size as bytes
+	totalMantaDownloadSize = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_download_size",
+		Help: "The total Manta download size as bytes, partial downloads are included",
+	})
+
+	// totalMantaListObjects is the metric that reports the total successful Manta list objects requests
+	totalMantaListObjects = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_list_objects",
+		Help: "The total number of successful Manta list objects requests",
+	})
+
+	// totalMantaSymLinkObject is the metric that reports the total successful Manta symlink object requests
+	totalMantaSymLinkObject = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_symlink_object",
+		Help: "The total number of successful Manta symlink object requests",
+	})
+	// totalMantaSymLinkObjectErrors is the metric that reports the total Manta symlink object requests
+	totalMantaSymLinkObjectErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_symlink_object_errors",
+		Help: "The total number of Manta symlink object errors",
+	})
+
+	// totalMantaCopyObject is the metric that reports the total successful Manta copy object requests
+	totalMantaCopyObject = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_copy_object",
+		Help: "The total number of successful Manta copy object requests",
+	})
+
+	// totalMantaDeleteObject is the metric that reports the total successful Manta delete object requests
+	totalMantaDeleteObject = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_delete_object",
+		Help: "The total number of successful Manta delete object requests",
+	})
+
+	// totalMantaListObjectsError is the metric that reports the total Manta list objects errors
+	totalMantaListObjectsErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_list_objects_errors",
+		Help: "The total number of Manta list objects errors",
+	})
+
+	// totalMantaCopyObjectErrors is the metric that reports the total Manta copy object errors
+	totalMantaCopyObjectErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_copy_object_errors",
+		Help: "The total number of Manta copy object errors",
+	})
+
+	// totalMantaDeleteObjectErrors is the metric that reports the total Manta delete object errors
+	totalMantaDeleteObjectErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_delete_object_errors",
+		Help: "The total number of Manta delete object errors",
+	})
+
+	// totalMantaHeadObject is the metric that reports the total successful Manta head object requests
+	totalMantaHeadObject = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_head_object",
+		Help: "The total number of successful Manta head object requests",
+	})
+
+	// totalMantaHeadObjectErrors is the metric that reports the total Manta head object errors
+	totalMantaHeadObjectErrors = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "sftpgo_manta_head_object_errors",
+		Help: "The total number of Manta head object errors",
+	})
 
 	// totalS3Uploads is the metric that reports the total number of successful S3 uploads
 	totalS3Uploads = promauto.NewCounter(prometheus.CounterOpts{
@@ -593,6 +688,64 @@ func TransferCompleted(bytesSent, bytesReceived int64, transferKind int, err err
 		totalDownloadSize.Add(float64(bytesSent))
 	}
 }
+
+// MantaTransferCompleted updates metrics after an Manta upload or a download
+func MantaTransferCompleted(bytes int64, transferKind int, err error) {
+	if transferKind == 0 {
+		// upload
+		if err == nil {
+			totalMantaUploads.Inc()
+		} else {
+			totalMantaUploadErrors.Inc()
+		}
+		totalMantaUploadSize.Add(float64(bytes))
+	} else {
+		// download
+		if err == nil {
+			totalMantaDownloads.Inc()
+		} else {
+			totalMantaDownloadErrors.Inc()
+		}
+		totalMantaDownloadSize.Add(float64(bytes))
+	}
+}
+
+// MantaHeadObjectCompleted updates metrics after a Manta head object request terminates
+func MantaHeadObjectCompleted(err error) {
+	if err == nil {
+		totalMantaHeadObject.Inc()
+	} else {
+		totalMantaHeadObjectErrors.Inc()
+	}
+}
+
+// MantaListObjectsCompleted updates metrics after an Manta list objects request terminates
+func MantaListObjectsCompleted(err error) {
+	if err == nil {
+		totalMantaListObjects.Inc()
+	} else {
+		totalMantaListObjectsErrors.Inc()
+	}
+}
+
+// MantaCopyObjectCompleted updates metrics after an Manta copy object request terminates
+func MantaSymLinkObjectCompleted(err error) {
+	if err == nil {
+		totalMantaSymLinkObject.Inc()
+	} else {
+		totalMantaCopyObjectErrors.Inc()
+	}
+}
+
+// MantaDeleteObjectCompleted updates metrics after an Manta delete object request terminates
+func MantaDeleteObjectCompleted(err error) {
+	if err == nil {
+		totalMantaDeleteObject.Inc()
+	} else {
+		totalMantaDeleteObjectErrors.Inc()
+	}
+}
+
 
 // S3TransferCompleted updates metrics after an S3 upload or a download
 func S3TransferCompleted(bytes int64, transferKind int, err error) {

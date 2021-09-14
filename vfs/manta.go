@@ -21,6 +21,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"github.com/drakkan/sftpgo/v2/logger"
+	"github.com/drakkan/sftpgo/v2/metric"
 	"github.com/drakkan/sftpgo/v2/version"
 	triton "github.com/joyent/triton-go/v2"
 	"github.com/joyent/triton-go/v2/authentication"
@@ -122,6 +123,7 @@ func (fs *MantaFs) headObject(name string) (*storage.GetInfoOutput, error) {
 		return nil, err
 	}
 
+	metric.MantaHeadObjectCompleted(err)
 	return info, nil
 }
 
@@ -156,7 +158,7 @@ func (fs *MantaFs) Open(name string, offset int64) (File, *pipeat.PipeReaderAt, 
 		n, err := io.Copy(w, obj.ObjectReader)
 		w.CloseWithError(err) //nolint:errcheck
 		fsLog(fs, logger.LevelDebug, "download completed, path: %#v size: %v, err: %v", name, n, err)
-		//metric.AZTransferCompleted(n, 1, err)
+		metric.MantaTransferCompleted(n, 1, err)
 	}()
 
 	return nil, r, cancelFn, nil
@@ -194,7 +196,7 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 		}
 		p.Done(err)
 		fsLog(fs, logger.LevelDebug, "upload completed, path: %#v, readed bytes: %v, err: %v", name, r.GetReadedBytes(), err)
-		//metric.AZTransferCompleted(r.GetReadedBytes(), 0, err)
+		metric.MantaTransferCompleted(r.GetReadedBytes(), 0, err)
 	}()
 
 	return nil, p, cancelFn, nil
@@ -230,6 +232,7 @@ func (fs *MantaFs) Remove(name string, isDir bool) error {
 	err := fs.svc.Dir().Delete(ctx, &storage.DeleteDirectoryInput{
 		DirectoryName: name,
 	})
+	metric.MantaDeleteObjectCompleted(err)
 	return err
 }
 
@@ -302,6 +305,7 @@ func (fs *MantaFs) Symlink(source, target string) error {
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
 	defer cancelFn()
 	err := fs.mkLink(ctx, source, target)
+	metric.MantaSymLinkObjectCompleted(err)
 	return err
 }
 
@@ -352,8 +356,8 @@ func (fs *MantaFs) ReadDir(dirname string) ([]os.FileInfo, error) {
 		}
 		result = append(result, NewFileInfo(e.Name, dir, int64(e.Size), e.ModifiedTime, false))
 	}
-
-	return result, nil
+	metric.MantaListObjectsCompleted(err)
+	return result, err
 }
 
 // IsUploadResumeSupported returns true if resuming uploads is supported.
@@ -450,7 +454,7 @@ func (fs *MantaFs) recurseDirectories(path string, result chan *RootScanResult, 
 		fmt.Printf("could not find %q\n", path)
 		return
 	}
-
+	metric.MantaListObjectsCompleted(err)
 	if out.ResultSetSize == 0 {
 		return
 	}
