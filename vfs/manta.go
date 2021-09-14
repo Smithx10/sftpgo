@@ -203,7 +203,7 @@ func (fs *MantaFs) Create(name string, flag int) (File, *PipeWriter, func(), err
 }
 
 func (fs *MantaFs) Rename(source, target string) error {
-	if fs.config.V2 {
+	if fs.config.V2 == "on" {
 		return ErrVfsUnsupported
 	}
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
@@ -299,7 +299,7 @@ func fixRootDirectory(p string) string {
 
 // Symlink creates source as a symbolic link to target.
 func (fs *MantaFs) Symlink(source, target string) error {
-	if fs.config.V2 {
+	if fs.config.V2 == "on" {
 		return ErrVfsUnsupported
 	}
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
@@ -559,7 +559,7 @@ func (fs *MantaFs) ResolvePath(virtualPath string) (string, error) {
 	if !path.IsAbs(virtualPath) {
 		virtualPath = path.Clean("/" + virtualPath)
 	}
-	return fs.Join(rpath, fs.config.Path, fs.config.Prefix, virtualPath), nil
+	return fs.Join(rpath, fs.config.Path, virtualPath), nil
 }
 
 // GetMimeType returns the content type

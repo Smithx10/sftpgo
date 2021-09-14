@@ -770,10 +770,8 @@ func getMantaConfig(r *http.Request) (vfs.MantaFsConfig, error) {
 	config.Account = r.Form.Get("manta_account")
 	config.KeyId = r.Form.Get("manta_key_id")
 	config.User = r.Form.Get("manta_user")
+	config.V2 = r.Form.Get("manta_v2")
 	config.PrivateKey = getSecretFromFormField(r, "manta_private_key")
-	if r.Form.Get("manta_v2") == "on" {
-		config.V2 = true
-	}
 	if err != nil {
 		return config, err
 	}
@@ -983,8 +981,12 @@ func getCryptFsFromTemplate(fsConfig vfs.CryptFsConfig, replacements map[string]
 }
 
 func getMantaFsFromTemplate(fsConfig vfs.MantaFsConfig, replacements map[string]string) vfs.MantaFsConfig {
-	fsConfig.Prefix = replacePlaceholders(fsConfig.Prefix, replacements)
 	fsConfig.Account = replacePlaceholders(fsConfig.Account, replacements)
+	fsConfig.Path = replacePlaceholders(fsConfig.Path, replacements)
+	fsConfig.KeyId = replacePlaceholders(fsConfig.KeyId, replacements)
+	fsConfig.User = replacePlaceholders(fsConfig.User, replacements)
+	fsConfig.V2 = replacePlaceholders(fsConfig.V2, replacements)
+	fsConfig.URL = replacePlaceholders(fsConfig.URL, replacements)
 	if fsConfig.PrivateKey != nil && fsConfig.PrivateKey.IsPlain() {
 		payload := replacePlaceholders(fsConfig.PrivateKey.GetPayload(), replacements)
 		fsConfig.PrivateKey = kms.NewPlainSecret(payload)

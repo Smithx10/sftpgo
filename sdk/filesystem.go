@@ -99,8 +99,7 @@ type MantaFsConfig struct {
 	PrivateKey *kms.Secret `json:"private_key,omitempty"`
 	KeyId      string      `json:"key_id,omitempty"`
 	User       string      `json:"user,omitempty"`
-	Prefix     string      `json:"prefix,omitempty"`
-	V2         bool        `json:"v2,omitempty"`
+	V2         string      `json:"v2,omitempty"`
 }
 
 // S3FsConfig defines the configuration for S3 based filesystem
