@@ -100,6 +100,7 @@ type MantaFsConfig struct {
 	KeyId      string      `json:"key_id,omitempty"`
 	User       string      `json:"user,omitempty"`
 	V2         string      `json:"v2,omitempty"`
+	KeyPrefix  string      `json:"key_prefix,omitempty"`
 }
 
 // S3FsConfig defines the configuration for S3 based filesystem

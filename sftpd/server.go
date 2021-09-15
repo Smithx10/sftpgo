@@ -505,6 +505,7 @@ func (c *Configuration) handleSftpConnection(channel ssh.Channel, connection *Co
 
 func (c *Configuration) createHandlers(connection *Connection) sftp.Handlers {
 	if c.FolderPrefix != "" {
+		fmt.Println("Prefix", c.FolderPrefix)
 		prefixMiddleware := newPrefixMiddleware(c.FolderPrefix, connection)
 
 		return sftp.Handlers{

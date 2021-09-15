@@ -261,6 +261,7 @@ func (f *Filesystem) GetACopy() Filesystem {
 				User:       f.MantaConfig.User,
 				PrivateKey: f.MantaConfig.PrivateKey.Clone(),
 				KeyId:      f.MantaConfig.KeyId,
+				KeyPrefix:  f.MantaConfig.KeyPrefix,
 			},
 		},
 		S3Config: S3FsConfig{

@@ -42,6 +42,7 @@ type MantaFs struct {
 	svc            *storage.StorageClient
 	ctxTimeout     time.Duration
 	ctxLongTimeout time.Duration
+	root           string
 }
 
 func init() {
@@ -65,6 +66,7 @@ func NewMantaFs(connectionID, localTempDir, mountPath string, config MantaFsConf
 		config:         &config,
 		ctxTimeout:     30 * time.Second,
 		ctxLongTimeout: 300 * time.Second,
+		root:           rpath + config.Path,
 	}
 	if err := fs.config.Validate(); err != nil {
 		return fs, err
@@ -303,6 +305,15 @@ func (fs *MantaFs) Symlink(source, target string) error {
 		return ErrVfsUnsupported
 	}
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(fs.ctxTimeout))
+
+	target = path.Clean(target)
+	trimmedTarget := strings.TrimPrefix(target, fs.root)
+	base := strings.Split(trimmedTarget, "/")[1]
+
+	source = path.Clean(source)
+	source = path.Base(source)
+	source = fs.root + "/" + base + "/" + source
+
 	defer cancelFn()
 	err := fs.mkLink(ctx, source, target)
 	metric.MantaSymLinkObjectCompleted(err)
@@ -409,7 +420,7 @@ func (fs *MantaFs) CheckRootPath(username string, uid int, gid int) bool {
 	if fs.config.Path == "/" {
 		return true
 	}
-	if err := fs.MkdirAll(rpath+fs.config.Path, uid, gid); err != nil {
+	if err := fs.MkdirAll(fs.root, uid, gid); err != nil {
 		fsLog(fs, logger.LevelDebug, "error creating root directory %#v for user %#v: %v", fs.config.Path, username, err)
 		return false
 	}
@@ -428,7 +439,7 @@ func (fs *MantaFs) getFileCounts() (int, int64, error) {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go fs.recurseDirectories(rpath+fs.config.Path, ch, &wg, false)
+	go fs.recurseDirectories(fs.root, ch, &wg, false)
 	go func() {
 		wg.Wait()
 		close(ch)
@@ -511,8 +522,7 @@ func (*MantaFs) GetAtomicUploadPath(name string) string {
 // This is the path as seen by SFTPGo users
 func (fs *MantaFs) GetRelativePath(name string) string {
 	clean := path.Clean(name)
-	removePath := rpath + fs.config.Path
-	rel := strings.TrimPrefix(clean, removePath)
+	rel := strings.TrimPrefix(clean, fs.root)
 	return rel
 }
 
@@ -523,7 +533,7 @@ func (fs *MantaFs) Walk(root string, walkFn filepath.WalkFunc) error {
 	var wg sync.WaitGroup
 
 	wg.Add(1)
-	go fs.recurseDirectories(rpath+fs.config.Path, ch, &wg, true)
+	go fs.recurseDirectories(fs.root, ch, &wg, true)
 	go func() {
 		wg.Wait()
 		close(ch)
@@ -559,7 +569,7 @@ func (fs *MantaFs) ResolvePath(virtualPath string) (string, error) {
 	if !path.IsAbs(virtualPath) {
 		virtualPath = path.Clean("/" + virtualPath)
 	}
-	return fs.Join(rpath, fs.config.Path, virtualPath), nil
+	return fs.Join(fs.root, virtualPath), nil
 }
 
 // GetMimeType returns the content type

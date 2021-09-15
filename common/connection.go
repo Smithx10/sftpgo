@@ -361,6 +361,7 @@ func (c *BaseConnection) RemoveDir(virtualPath string) error {
 
 // Rename renames (moves) virtualSourcePath to virtualTargetPath
 func (c *BaseConnection) Rename(virtualSourcePath, virtualTargetPath string) error {
+	//fmt.Println("RENAME", virtualSourcePath)
 	fsSrc, fsSourcePath, err := c.GetFsAndResolvedPath(virtualSourcePath)
 	if err != nil {
 		return err
@@ -423,6 +424,7 @@ func (c *BaseConnection) Rename(virtualSourcePath, virtualTargetPath string) err
 
 // CreateSymlink creates fsTargetPath as a symbolic link to fsSourcePath
 func (c *BaseConnection) CreateSymlink(virtualSourcePath, virtualTargetPath string) error {
+	//fmt.Println("SYMLINK", virtualSourcePath)
 	if c.isCrossFoldersRequest(virtualSourcePath, virtualTargetPath) {
 		c.Log(logger.LevelWarn, "cross folder symlink is not supported, src: %v dst: %v", virtualSourcePath, virtualTargetPath)
 		return c.GetOpUnsupportedError()
@@ -1138,6 +1140,7 @@ func (c *BaseConnection) GetFsError(fs vfs.Fs, err error) error {
 
 // GetFsAndResolvedPath returns the fs and the fs path matching virtualPath
 func (c *BaseConnection) GetFsAndResolvedPath(virtualPath string) (vfs.Fs, string, error) {
+	//fmt.Println("GetFSAndResolvedPath", virtualPath)
 	fs, err := c.User.GetFilesystemForPath(virtualPath, c.ID)
 	if err != nil {
 		if c.protocol == ProtocolWebDAV && strings.Contains(err.Error(), vfs.ErrSFTPLoop.Error()) {
